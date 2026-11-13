@@ -1,0 +1,83 @@
+name: Build unsigned Android App Bundle
+
+# Builds the Flutter app unsigned (debug-signed by Gradle by default if no release
+# signing config is active, or completely unsigned depending on your build.gradle).
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  unsigned-aab:
+    name: Unsigned release AAB
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: "3.41.9"
+          cache: true
+
+      - name: Build unsigned release bundle
+        working-directory: flutter_app
+        run: flutter build appbundle --release
+
+      - name: Upload unsigned AAB
+        uses: actions/upload-artifact@v4
+        with:
+          name: dosbox-multiplatform-unsigned-aab
+          path: flutter_app/build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 2
+
+      # The bundle goes to Play; the APK is what a person can sideload, so a
+      # tag's release carries both.
+      - name: Build unsigned APK
+        working-directory: flutter_app
+        run: flutter build apk --release
+
+      - name: Upload unsigned APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: dosbox-multiplatform-unsigned-apk
+          path: flutter_app/build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
+          retention-days: 2
+
+  release:
+    name: GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: unsigned-aab
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            artifacts/dosbox-multiplatform-unsigned-apk/*.apk
+            artifacts/dosbox-multiplatform-unsigned-aab/*.aab
+            
